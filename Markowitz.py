@@ -63,6 +63,15 @@ class EqualWeightPortfolio:
         TODO: Complete Task 1 Below
         """
 
+        m = len(assets)
+        if m > 0:
+            equal_w = 1.0 / m
+        # fill the portfolio_weights for assets with equal weight, and 0 for excluded
+            for date in df.index:
+                self.portfolio_weights.loc[date, assets] = equal_w
+                # ensure excluded asset (e.g., SPY) is zero
+                self.portfolio_weights.loc[date, self.exclude] = 0.0
+
         """
         TODO: Complete Task 1 Above
         """
@@ -114,7 +123,21 @@ class RiskParityPortfolio:
         TODO: Complete Task 2 Below
         """
 
-
+        # Compute rolling volatility (standard deviation) and inverse-vol weights
+        eps = 1e-8
+        vol = df_returns[assets].rolling(window=self.lookback).std()
+        inv_vol = 1.0 / (vol + eps)
+        # Normalize so weights sum to 1 on each date
+        inv_vol_sum = inv_vol.sum(axis=1)
+        # For dates before lookback, inv_vol_sum can be NaN; we'll fill later via ffill
+        for date in df.index:
+            if date in inv_vol_sum.index and not np.isnan(inv_vol_sum.loc[date]):
+                weights = inv_vol.loc[date] / inv_vol_sum.loc[date]
+                self.portfolio_weights.loc[date, assets] = weights.values
+                self.portfolio_weights.loc[date, self.exclude] = 0.0
+            else:
+                # leave NaN to be filled later
+                continue
 
         """
         TODO: Complete Task 2 Above
@@ -190,8 +213,25 @@ class MeanVariancePortfolio:
 
                 # Sample Code: Initialize Decision w and the Objective
                 # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                """w = model.addMVar(n, name="w", ub=1)
+                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)"""
+
+
+                # Decision variables: weights w_i >= 0
+                w = model.addMVar(shape=n, lb=0.0, ub=1.0, name="w")
+
+
+                # Constraint: sum w == 1
+                model.addConstr(w.sum() == 1.0, name="budget")
+
+
+                # Objective: maximize w^T mu - (gamma/2) * w^T Sigma w
+                # Linear term
+                linear_term = w @ mu
+                # Quadratic term: w^T Sigma w
+                # Gurobi supports quadratic objective with MVar
+                quad_term = w @ (Sigma @ w)
+                model.setObjective(linear_term - 0.5 * gamma * quad_term, gp.GRB.MAXIMIZE)
 
                 """
                 TODO: Complete Task 3 Above

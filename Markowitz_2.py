@@ -71,7 +71,53 @@ class MyPortfolio:
         TODO: Complete Task 4 Below
         """
         
-        
+        # Strategy design (momentum + inverse-volatility among top k):
+        # 1) Compute momentum over lookback days (total return)
+        # 2) Choose top k sectors by momentum (k = 3)
+        # 3) Within chosen sectors, assign weights proportional to inverse volatility
+        # (so lower vol sectors get more weight)
+        # 4) If all momenta are negative, fall back to equal weight across all sectors
+
+
+        k = 3
+        eps = 1e-8
+        for i in range(self.lookback, len(self.price)):
+            date = self.price.index[i]
+            window = self.price.iloc[i - self.lookback : i]
+            # compute momentum as (last / first) - 1 over window
+            momentum = window.iloc[-1] / window.iloc[0] - 1.0
+            # select assets excluding the benchmark
+            mom = momentum[assets]
+
+
+            # pick top k by momentum
+            topk = mom.sort_values(ascending=False).iloc[:k]
+            if topk.isnull().all():
+                # fallback: equal weight
+                w = pd.Series(0.0, index=assets)
+                w[:] = 1.0 / len(assets)
+            else:
+                # if all topk <= 0, still pick those with highest (less negative)
+                selected = topk.index.tolist()
+                # compute inverse vol over the same window
+                vol = window[assets].pct_change().dropna().std()
+                inv_vol = 1.0 / (vol + eps)
+                inv_vol_sel = inv_vol.loc[selected]
+                if inv_vol_sel.sum() == 0:
+                    weights_sel = np.repeat(1.0 / len(selected), len(selected))
+                else:
+                    weights_sel = inv_vol_sel / inv_vol_sel.sum()
+                # assign to full vector
+                w = pd.Series(0.0, index=assets)
+                for idx, wt in zip(selected, weights_sel):
+                    w.loc[idx] = wt
+
+
+            # Set weights for that date
+            self.portfolio_weights.loc[date, assets] = w.values
+            # Ensure exclude column is zero
+            self.portfolio_weights.loc[date, self.exclude] = 0.0
+
         """
         TODO: Complete Task 4 Above
         """
