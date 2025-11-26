@@ -72,6 +72,7 @@ class MyPortfolio:
         """
         
         # Strategy design (momentum + inverse-volatility among top k):
+        
         # 1) Compute momentum over lookback days (total return)
         # 2) Choose top k sectors by momentum (k = 3)
         # 3) Within chosen sectors, assign weights proportional to inverse volatility

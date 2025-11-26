@@ -212,6 +212,7 @@ class MeanVariancePortfolio:
                 """
 
                 # Sample Code: Initialize Decision w and the Objective
+                
                 # NOTE: You can modify the following code
                 """w = model.addMVar(n, name="w", ub=1)
                 model.setObjective(w.sum(), gp.GRB.MAXIMIZE)"""
