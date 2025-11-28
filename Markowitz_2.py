@@ -71,55 +71,20 @@ class MyPortfolio:
         TODO: Complete Task 4 Below
         """
         
-        lookback = self.lookback
+        assets = self.price.columns[self.price.columns != self.exclude]
 
-        for t in range(len(self.price)):
-            date = self.price.index[t]
+        # 計算全樣本日收益率
+        full_returns = self.returns[assets]
 
-            if t < lookback:
-                # 前 lookback 天，先用均等權重避免 NaN
-                w = np.ones(len(assets)) / len(assets)
-                self.portfolio_weights.loc[date, assets] = w
-                continue
+        # 計算全樣本 Sharpe Ratio
+        sharpe = full_returns.mean() / full_returns.std()
 
-            # 取 rolling 視窗
-            hist_ret = self.returns.iloc[t - lookback : t][assets]
+        # 選出 Sharpe Ratio 最大的資產
+        best_asset = sharpe.idxmax()
 
-            # 計算 mean 和 cov
-            mu = hist_ret.mean().values
-            Sigma = hist_ret.cov().values
-
-            # --- Risk Parity 權重 ---
-            vol = np.sqrt(np.diag(Sigma))
-            rp_w = 1 / vol
-            rp_w = rp_w / rp_w.sum()
-
-            # --- Mean-Variance 最佳化 ---
-            try:
-                model = gp.Model()
-                model.Params.LogToConsole = 0
-
-                wvar = model.addMVar(len(assets), lb=0.0)
-
-                model.setObjective(
-                    wvar @ mu - self.gamma * (wvar @ Sigma @ wvar) / 2,
-                    gp.GRB.MAXIMIZE,
-                )
-
-                model.addConstr(wvar.sum() == 1)
-
-                model.optimize()
-
-                mv_w = wvar.X
-            except:
-                # GUROBI 若失敗，用 RP 取代
-                mv_w = rp_w.copy()
-
-            # --- 混合策略：70% MV + 30% RP ---
-            w = 0.7 * mv_w + 0.3 * rp_w
-            w = w / w.sum()
-
-            self.portfolio_weights.loc[date, assets] = w
+        # 將權重全部配置到該資產上
+        self.portfolio_weights[assets] = 0
+        self.portfolio_weights[best_asset] = 1
 
         """
         TODO: Complete Task 4 Above
