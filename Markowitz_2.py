@@ -71,53 +71,55 @@ class MyPortfolio:
         TODO: Complete Task 4 Below
         """
         
-        # Strategy design (momentum + inverse-volatility among top k):
-        
-        # 1) Compute momentum over lookback days (total return)
-        # 2) Choose top k sectors by momentum (k = 3)
-        # 3) Within chosen sectors, assign weights proportional to inverse volatility
-        # (so lower vol sectors get more weight)
-        # 4) If all momenta are negative, fall back to equal weight across all sectors
+        lookback = self.lookback
 
+        for t in range(len(self.price)):
+            date = self.price.index[t]
 
-        k = 3
-        eps = 1e-8
-        for i in range(self.lookback, len(self.price)):
-            date = self.price.index[i]
-            window = self.price.iloc[i - self.lookback : i]
-            # compute momentum as (last / first) - 1 over window
-            momentum = window.iloc[-1] / window.iloc[0] - 1.0
-            # select assets excluding the benchmark
-            mom = momentum[assets]
+            if t < lookback:
+                # 前 lookback 天，先用均等權重避免 NaN
+                w = np.ones(len(assets)) / len(assets)
+                self.portfolio_weights.loc[date, assets] = w
+                continue
 
+            # 取 rolling 視窗
+            hist_ret = self.returns.iloc[t - lookback : t][assets]
 
-            # pick top k by momentum
-            topk = mom.sort_values(ascending=False).iloc[:k]
-            if topk.isnull().all():
-                # fallback: equal weight
-                w = pd.Series(0.0, index=assets)
-                w[:] = 1.0 / len(assets)
-            else:
-                # if all topk <= 0, still pick those with highest (less negative)
-                selected = topk.index.tolist()
-                # compute inverse vol over the same window
-                vol = window[assets].pct_change().dropna().std()
-                inv_vol = 1.0 / (vol + eps)
-                inv_vol_sel = inv_vol.loc[selected]
-                if inv_vol_sel.sum() == 0:
-                    weights_sel = np.repeat(1.0 / len(selected), len(selected))
-                else:
-                    weights_sel = inv_vol_sel / inv_vol_sel.sum()
-                # assign to full vector
-                w = pd.Series(0.0, index=assets)
-                for idx, wt in zip(selected, weights_sel):
-                    w.loc[idx] = wt
+            # 計算 mean 和 cov
+            mu = hist_ret.mean().values
+            Sigma = hist_ret.cov().values
 
+            # --- Risk Parity 權重 ---
+            vol = np.sqrt(np.diag(Sigma))
+            rp_w = 1 / vol
+            rp_w = rp_w / rp_w.sum()
 
-            # Set weights for that date
-            self.portfolio_weights.loc[date, assets] = w.values
-            # Ensure exclude column is zero
-            self.portfolio_weights.loc[date, self.exclude] = 0.0
+            # --- Mean-Variance 最佳化 ---
+            try:
+                model = gp.Model()
+                model.Params.LogToConsole = 0
+
+                wvar = model.addMVar(len(assets), lb=0.0)
+
+                model.setObjective(
+                    wvar @ mu - self.gamma * (wvar @ Sigma @ wvar) / 2,
+                    gp.GRB.MAXIMIZE,
+                )
+
+                model.addConstr(wvar.sum() == 1)
+
+                model.optimize()
+
+                mv_w = wvar.X
+            except:
+                # GUROBI 若失敗，用 RP 取代
+                mv_w = rp_w.copy()
+
+            # --- 混合策略：70% MV + 30% RP ---
+            w = 0.7 * mv_w + 0.3 * rp_w
+            w = w / w.sum()
+
+            self.portfolio_weights.loc[date, assets] = w
 
         """
         TODO: Complete Task 4 Above

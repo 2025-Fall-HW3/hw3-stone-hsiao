@@ -123,21 +123,17 @@ class RiskParityPortfolio:
         TODO: Complete Task 2 Below
         """
 
-        # Compute rolling volatility (standard deviation) and inverse-vol weights
-        eps = 1e-8
-        vol = df_returns[assets].rolling(window=self.lookback).std()
-        inv_vol = 1.0 / (vol + eps)
-        # Normalize so weights sum to 1 on each date
-        inv_vol_sum = inv_vol.sum(axis=1)
-        # For dates before lookback, inv_vol_sum can be NaN; we'll fill later via ffill
-        for date in df.index:
-            if date in inv_vol_sum.index and not np.isnan(inv_vol_sum.loc[date]):
-                weights = inv_vol.loc[date] / inv_vol_sum.loc[date]
-                self.portfolio_weights.loc[date, assets] = weights.values
-                self.portfolio_weights.loc[date, self.exclude] = 0.0
-            else:
-                # leave NaN to be filled later
-                continue
+        for i in range(self.lookback + 1, len(df)):
+
+            R = df_returns[assets].iloc[i - self.lookback : i]
+            vol = R.std()
+            vol = vol.replace(0, 1e-8)
+
+            inv_vol = 1 / vol
+            weights = inv_vol / inv_vol.sum()
+
+            self.portfolio_weights.loc[df.index[i], assets] = weights.values
+            self.portfolio_weights.loc[df.index[i], self.exclude] = 0
 
         """
         TODO: Complete Task 2 Above
@@ -212,7 +208,6 @@ class MeanVariancePortfolio:
                 """
 
                 # Sample Code: Initialize Decision w and the Objective
-                
                 # NOTE: You can modify the following code
                 """w = model.addMVar(n, name="w", ub=1)
                 model.setObjective(w.sum(), gp.GRB.MAXIMIZE)"""
